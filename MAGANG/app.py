@@ -2,12 +2,10 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import google.generativeai as genai
-import os
-from dotenv import load_dotenv
 
-load_dotenv()  # baca file .env
+gemini_api_key = st.secrets["GEMINI_API_KEY"]  # ambil dari Streamlit Secrets
 
-gemini_api_key = os.getenv("GEMINI_API_KEY")  # ambil variabel dari .env
+genai.configure(api_key=gemini_api_key)
 
 
 st.set_page_config(page_title="Dashboard Caring", layout="wide")
