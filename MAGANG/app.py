@@ -426,7 +426,8 @@ Status caring terbanyak (mode caring 1): {top_caring_label}
         # Tombol untuk menjalankan solusi otomatis
         if st.button("🔎 Jalankan Analisis & Solusi Otomatis"):
             prompt = f"""
-Kamu adalah AI analis Collection. Berdasarkan ringkasan berikut (termasuk Additional Info hasil Caring 2), buat SOLUSI OTOMATIS dengan fokus hanya pada 4 status utama: UNCONTACTABLE, ISSUED, NOT YET, JANJI BAYAR.
+Kamu adalah AI analis Collection. Berdasarkan ringkasan berikut  ( baca kolom ADDITIONAL INFO dari file yang di upload, khususnya pada jenis caring SALAH SAMBUNG 
+dan COMPLAINT LAYANAN), buat SOLUSI OTOMATIS dengan fokus hanya pada 4 status utama: UNCONTACTABLE, ISSUED, NOT YET, JANJI BAYAR.
 
 Format jawaban:
 1) Prioritas Tindakan (bullet per DATEL, hanya untuk 4 status ini)
