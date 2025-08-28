@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import google.generativeai as genai
+from rapidfuzz import process
 
 gemini_api_key = st.secrets["GEMINI_API_KEY"]  # ambil dari Streamlit Secrets
 
@@ -32,6 +33,10 @@ if uploaded_file:
     # Baca sheet terpilih
     df = pd.read_excel(uploaded_file, sheet_name=sheet_name)
     df.columns = df.columns.str.strip().str.upper()
+    kolom_privasi = ["NAMA", "EMAIL", "NO HP", "NO. HP", "ALAMAT"]
+    df = df.drop(columns=[col for col in kolom_privasi if col in df.columns], errors="ignore")
+    st.warning("🔒 Kolom privasi seperti NAMA, EMAIL, dan NO HP telah diabaikan otomatis.")
+
 
     # Bersihkan kolom DATEL
     if "DATEL" in df.columns:
@@ -87,9 +92,14 @@ if uploaded_file:
     # Filter Status Paid
     if "STATUS PAID" in df.columns:
         paid_list = sorted(df["STATUS PAID"].dropna().unique())
-        selected_paid = st.sidebar.selectbox("Status Paid", ["(Semua)"] + paid_list)
-        if selected_paid != "(Semua)":
-            df = df[df["STATUS PAID"] == selected_paid]
+    # Default index: cari posisi "UNPAID", kalau tidak ada fallback ke 0 ("(Semua)")
+    default_index = 0
+    if "UNPAID" in paid_list:
+        default_index = paid_list.index("UNPAID") + 1  # +1 karena "(Semua)" di index 0
+    selected_paid = st.sidebar.selectbox("Status Paid", ["(Semua)"] + paid_list, index=default_index)
+    if selected_paid != "(Semua)":
+        df = df[df["STATUS PAID"] == selected_paid]
+
 
     # Pilihan hasil caring
     caring_choice = []
@@ -136,7 +146,7 @@ if uploaded_file:
 
     # =========================
     # ======= PENAMBAHAN ======
-    #  Statistik ringkas, download, insight mingguan, rekomendasi follow-up
+    # === Statistik ringkas ===
     # =========================
 
     # Statistik Ringkas (summary cards)
@@ -164,44 +174,110 @@ if uploaded_file:
     col4.metric("Status Caring Terbanyak", top_caring_label)
 
     # =========================
-    # CHART DISTRIBUSI
+    # CHART DISTRIBUSI ========
     # =========================
     st.subheader("Distribusi Status Caring")
-    chart_type = st.radio(
-        "Pilih jenis chart:",
-        ["Pie Chart", "Bar Chart"],
+
+    # Pilihan jenis tampilan chart
+    tampilan_chart = st.radio(
+        "Tampilkan berdasarkan:",
+        ["Status Asli", "Kategori Caring"],
         horizontal=True
     )
 
-    # Fungsi untuk membuat chart (diperbarui: pie chart tampilkan persentase)
+    # Fungsi pie chart
     def buat_chart(data, kolom, judul):
         count_df = data[kolom].value_counts().reset_index()
         count_df.columns = [kolom, "JUMLAH"]
-        if chart_type == "Pie Chart":
-            fig = px.pie(count_df, names=kolom, values="JUMLAH", title=judul)
-            fig.update_traces(textinfo="percent+label", textfont_size=8)
-        else:
-            fig = px.bar(count_df, x=kolom, y="JUMLAH", title=judul, text="JUMLAH")
-            fig.update_traces(textposition="outside")
+        fig = px.pie(count_df, names=kolom, values="JUMLAH", title=judul)
+        fig.update_traces(textinfo="percent+label", textfont_size=8)
         return fig
 
-    # Tampilkan chart sesuai pilihan (tetap mempertahankan alur aslinya)
-    if selected_hasil_caring == "Status Caring 1":
-        st.plotly_chart(buat_chart(df, "STATUS CARING 1", "Distribusi Status Caring 1"), use_container_width=True)
-    elif selected_hasil_caring == "Status Caring 2":
-        st.plotly_chart(buat_chart(df, "STATUS CARING 2", "Distribusi Status Caring 2"), use_container_width=True)
-    elif selected_hasil_caring == "Status Caring":
-        st.plotly_chart(buat_chart(df, "STATUS CARING", "Distribusi Status Caring"), use_container_width=True)
-    else:  # Semua
-        df1 = df.copy()
-        if "STATUS CARING 1" in df1.columns:
-            st.plotly_chart(buat_chart(df1, "STATUS CARING 1", "Distribusi Status Caring 1"), use_container_width=True)
-        if "STATUS CARING 2" in df1.columns:
-            st.plotly_chart(buat_chart(df1, "STATUS CARING 2", "Distribusi Status Caring 2"), use_container_width=True)
+    # Normalisasi status
+    valid_statuses = [
+        "RNA", "TIDAK ADA NO KONTAK", "TIDAK AKTIF", "SALAH SAMBUNG", "REJECTED",
+        "COMPLAINT LAYANAN", "INGIN CABUT", "SUDAH BERHENTI BERLANGGANAN",
+        "RESPONS OK", "LUNAS/PAID"
+    ]
 
-    # =========================
+    def normalisasi_status(status):
+        status = str(status).strip().upper()
+        match = process.extractOne(status, valid_statuses, score_cutoff=70)
+        return match[0] if match else status
+
+    # Kategori caring
+    kategori_dict = {
+        "UNCONTACTABLE": ["RNA", "TIDAK ADA NO KONTAK", "TIDAK AKTIF", "SALAH SAMBUNG", "REJECTED"],
+        "ISSUED": ["COMPLAINT LAYANAN", "INGIN CABUT"],
+        "NOT YET": ["SUDAH BERHENTI BERLANGGANAN", "", "NAN", "NONE", "NULL", "-", "0"],
+        "JANJI BAYAR": ["RESPONS OK"],
+        "PAID": ["LUNAS", "PAID", "LUNAS/PAID"],
+        "ZERO BILLING": ["ZERO BILLING"]
+    }
+
+    all_keywords = [(kat, val) for kat, values in kategori_dict.items() for val in values]
+
+    def kategori_keywords(status):
+        status = str(status).strip().upper()
+        best_match = process.extractOne(status, [val for _, val in all_keywords], score_cutoff=70)
+        if best_match:
+            matched_val = best_match[0]
+            for kategori, values in kategori_dict.items():
+                if matched_val in values:
+                    return kategori
+        return "LAINNYA"
+
+    # Salin dataframe utama agar tidak merusak aslinya
+    df_chart = df.copy()
+
+    # ================================
+    # TAMPAILKAN CHART SESUAI PILIHAN
+    # ================================
+
+    if tampilan_chart == "Status Asli":
+        for kolom in ["STATUS CARING 1", "STATUS CARING 2", "STATUS CARING"]:
+            if kolom in df_chart.columns:
+                df_chart[kolom] = df_chart[kolom].fillna("").astype(str).str.strip().str.upper()
+                df_chart[kolom] = df_chart[kolom].apply(normalisasi_status)
+
+        if selected_hasil_caring == "Status Caring 1":
+            st.plotly_chart(buat_chart(df_chart, "STATUS CARING 1", "Distribusi Status Caring 1"), use_container_width=True, key="asli_status_1")
+        elif selected_hasil_caring == "Status Caring 2":
+            st.plotly_chart(buat_chart(df_chart, "STATUS CARING 2", "Distribusi Status Caring 2"), use_container_width=True, key="asli_status_2")
+        elif selected_hasil_caring == "Status Caring":
+            st.plotly_chart(buat_chart(df_chart, "STATUS CARING", "Distribusi Status Caring"), use_container_width=True, key="asli_status_total")
+        else:  # Semua
+            if "STATUS CARING 1" in df_chart.columns:
+                st.plotly_chart(buat_chart(df_chart, "STATUS CARING 1", "Distribusi Status Caring 1"), use_container_width=True, key="asli_status_all_1")
+            if "STATUS CARING 2" in df_chart.columns:
+                st.plotly_chart(buat_chart(df_chart, "STATUS CARING 2", "Distribusi Status Caring 2"), use_container_width=True, key="asli_status_all_2")
+
+    elif tampilan_chart == "Kategori Caring":
+        if selected_hasil_caring == "Status Caring 1":
+            df_chart["KATEGORI CARING"] = df_chart["STATUS CARING 1"].apply(kategori_keywords)
+            st.plotly_chart(buat_chart(df_chart, "KATEGORI CARING", "Distribusi Kategori Caring 1"), use_container_width=True, key="kategori_status_1")
+
+        elif selected_hasil_caring == "Status Caring 2":
+            df_chart["KATEGORI CARING"] = df_chart["STATUS CARING 2"].apply(kategori_keywords)
+            st.plotly_chart(buat_chart(df_chart, "KATEGORI CARING", "Distribusi Kategori Caring 2"), use_container_width=True, key="kategori_status_2")
+
+        elif selected_hasil_caring == "Status Caring":
+            df_chart["KATEGORI CARING"] = df_chart["STATUS CARING"].apply(kategori_keywords)
+            st.plotly_chart(buat_chart(df_chart, "KATEGORI CARING", "Distribusi Kategori Caring"), use_container_width=True, key="kategori_status_total")
+
+        else:  # Semua
+            if "STATUS CARING 1" in df_chart.columns:
+                df_chart["KATEGORI CARING 1"] = df_chart["STATUS CARING 1"].apply(kategori_keywords)
+                st.plotly_chart(buat_chart(df_chart, "KATEGORI CARING 1", "Distribusi Kategori Caring 1"), use_container_width=True, key="kategori_all_1")
+
+            if "STATUS CARING 2" in df_chart.columns:
+                df_chart["KATEGORI CARING 2"] = df_chart["STATUS CARING 2"].apply(kategori_keywords)
+                st.plotly_chart(buat_chart(df_chart, "KATEGORI CARING 2", "Distribusi Kategori Caring 2"), use_container_width=True, key="kategori_all_2")
+
+
+    # =======================================================
     # RINGKASAN STATUS CARING KOSONG - OTOMATIS SESUAI PILIHAN
-    # =========================
+    # ========================================================
     st.subheader("📌 Ringkasan Data Kosong pada Status Caring")
 
     # Pastikan kolom DATEL bersih
@@ -278,9 +354,9 @@ if uploaded_file:
             st.plotly_chart(fig, use_container_width=True)
 
     
-    # =========================
+    # ===========================
     # AI GEMINI – SOLUSI OTOMATIS
-    # =========================
+    # ===========================
     st.subheader("🤖 Solusi Otomatis dari AI (Gemini)")
 
     if gemini_api_key:
@@ -350,22 +426,23 @@ Status caring terbanyak (mode caring 1): {top_caring_label}
         # Tombol untuk menjalankan solusi otomatis
         if st.button("🔎 Jalankan Analisis & Solusi Otomatis"):
             prompt = f"""
-Kamu adalah AI analis Collection. Berdasarkan ringkasan berikut, buat SOLUSI OTOMATIS yang:
-- Spesifik dan actionable,
-- Memprioritaskan DATEL yang paling berisiko,
-- Memberi quick wins 7 hari,
-- Metrik yang dipantau,
-- Risiko & mitigasi singkat.
-
-Ringkasan data:
-{summary}
+Kamu adalah AI analis Collection. Berdasarkan ringkasan berikut (termasuk Additional Info hasil Caring 2), buat SOLUSI OTOMATIS dengan fokus hanya pada 4 status utama: UNCONTACTABLE, ISSUED, NOT YET, JANJI BAYAR.
 
 Format jawaban:
-1) Prioritas Tindakan (bullet)
-2) Quick Wins 7 Hari (bullet)
-3) Metrik yang Dipantau (bullet)
-4) Risiko & Mitigasi (bullet)
-5) Catatan Tambahan (jika perlu)
+1) Prioritas Tindakan (bullet per DATEL, hanya untuk 4 status ini)
+2) Quick Wins 7 Hari (Hari 1–7, aksi harian spesifik)
+3) Solusi untuk Uncontactable (alternatif multi-channel, data sekunder, kunjungan lapangan)fokuskan
+
+
+Syarat:
+- Sebutkan DATEL paling berisiko berdasarkan data Caring 2.
+- Untuk setiap DATEL, jelaskan tindakan sesuai status dominan (Uncontactable, Issued, Not Yet, Janji Bayar).
+- Quick wins harus kuantitatif (contoh: Uncontactable ↓20% dalam 7 hari, 50% Janji Bayar terealisasi).
+- Solusi harus singkat, to the point, actionable.
+Ringkasan data:
+
+{summary}
+
 """
 
             try:
