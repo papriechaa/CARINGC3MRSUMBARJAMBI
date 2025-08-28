@@ -277,53 +277,9 @@ if uploaded_file:
             fig.update_traces(texttemplate='%{y}', textposition='outside')
             st.plotly_chart(fig, use_container_width=True)
 
-
-
-
-    # # Insight Mingguan per Branch (jika ada kolom tanggal)
-    # if "TANGGAL" in df.columns:
-    #     st.subheader("📈 Insight Mingguan")
-    #     try:
-    #         df["TANGGAL"] = pd.to_datetime(df["TANGGAL"], errors='coerce')
-    #         weekly = df.groupby([pd.Grouper(key="TANGGAL", freq="W"), "BRANCH"]).size().reset_index(name="JUMLAH")
-    #         if not weekly.empty:
-    #             fig_weekly = px.line(
-    #                 weekly, x="TANGGAL", y="JUMLAH", color="BRANCH",
-    #                 title="Jumlah Kasus per Minggu per Branch", markers=True
-    #             )
-    #             st.plotly_chart(fig_weekly, use_container_width=True)
-    #         else:
-    #             st.info("Tidak ada data tanggal yang valid untuk insight mingguan.")
-    #     except Exception as e:
-    #         st.warning(f"Tidak bisa membuat insight mingguan: {e}")
-
-    # Rekomendasi tindak lanjut otomatis untuk kasus collection (rule-based)
-    # st.subheader("💡 Rekomendasi Tindak Lanjut (Follow-up Collection)")
-    # rekomendasi = []
-    # if "STATUS CARING 1" in df.columns:
-    #     s = df["STATUS CARING 1"].astype(str).str.upper()
-    #     if s.str.contains("NO NUMBER", na=False).any() or s.str.contains("NO_PHONE", na=False).any():
-    #         rekomendasi.append("🔹 Ada record 'NO NUMBER' — lakukan cleansing data nomor, cek CRM/DB lain, atau minta tim lapangan validasi kontak.")
-    #     if s.str.contains("REJECTED", na=False).any():
-    #         rekomendasi.append("🔹 Ada 'REJECTED' — verifikasi alasan rejection; pertimbangkan eskalasi ke team retention atau kunjungan lapangan.")
-    #     if s.str.contains("INVALID", na=False).any():
-    #         rekomendasi.append("🔹 Ada 'INVALID' — tandai untuk sinkronisasi dengan sumber data utama dan eliminasi duplikat.")
-    # if "STATUS CARING 2" in df.columns:
-    #     s2 = df["STATUS CARING 2"].astype(str).str.upper()
-    #     if s2.str.contains("NO NUMBER", na=False).any() or s2.str.contains("NO_PHONE", na=False).any():
-    #         rekomendasi.append("🔹 Di STATUS CARING 2 ditemukan 'NO NUMBER' — koordinasikan dengan team entry data.")
-    #     if s2.str.contains("REJECTED", na=False).any():
-    #         rekomendasi.append("🔹 Di STATUS CARING 2 ada 'REJECTED' — buat workflow verifikasi tambahan.")
-
-    # if not rekomendasi:
-    #     st.markdown("✅ Tidak terdeteksi status NO NUMBER / REJECTED / INVALID pada data hasil filter.")
-    # else:
-    #     for r in rekomendasi:
-    #         st.markdown(r)
-
     
     # =========================
-    # 🤖 AI GEMINI – SOLUSI OTOMATIS
+    # AI GEMINI – SOLUSI OTOMATIS
     # =========================
     st.subheader("🤖 Solusi Otomatis dari AI (Gemini)")
 
